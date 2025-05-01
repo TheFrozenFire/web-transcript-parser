@@ -292,6 +292,18 @@ impl Array {
 
         RangeSet::from([start..start + 1, end..end + 1])
     }
+
+    /// Returns the indices of the separators between the elements of the array.
+    pub fn separators(&self) -> RangeSet<usize> {
+        let array_range: RangeSet<usize> = self.to_range_set().difference(&self.without_values());
+        let difference = self
+            .elems
+            .iter()
+            .map(|e| e.to_range_set())
+            .fold(array_range.clone(), |acc, range| acc.difference(&range));
+
+        difference
+    }
 }
 
 impl Index<usize> for Array {
