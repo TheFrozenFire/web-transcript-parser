@@ -331,16 +331,25 @@ pub struct Object {
 impl Object {
     /// Get a reference to the value using the given path.
     pub fn get(&self, path: &str) -> Option<&JsonValue> {
+        self.get_keyvalue(path).map(|kv| &kv.value)
+    }
+
+    /// Get a reference to the key value pair using the given path.
+    pub fn get_keyvalue(&self, path: &str) -> Option<&KeyValue> {
         let mut path_iter = path.split('.');
 
         let key = path_iter.next()?;
 
-        let KeyValue { value, .. } = self.elems.iter().find(|kv| kv.key == key)?;
+        let keyvalue = self.elems.iter().find(|kv| kv.key == key)?;
 
         if path_iter.next().is_some() {
-            value.get(&path[key.len() + 1..])
+            if let JsonValue::Object(obj) = &keyvalue.value {
+                obj.get_keyvalue(&path[key.len() + 1..])
+            } else {
+                None
+            }
         } else {
-            Some(value)
+            Some(keyvalue)
         }
     }
 
