@@ -1,7 +1,7 @@
 use std::ops::Range;
 
 use bytes::Bytes;
-use utils::range::RangeSet;
+use rangeset::RangeSet;
 
 use crate::{
     helpers::get_span_range,
@@ -66,7 +66,7 @@ pub(crate) fn parse_request_from_bytes(src: &Bytes, offset: usize) -> Result<Req
         .expect("method is present");
 
     let mut request = Request {
-        span: Span::new_bytes(src.clone(), offset..head_end),
+        span: Span::new_bytes(src.clone(), (offset..head_end).into()),
         request: RequestLine {
             span: Span::new_str(src.clone(), request_line_range),
             method: Method(Span::new_str(src.clone(), get_span_range(src, method))),
@@ -96,8 +96,8 @@ pub(crate) fn parse_request_from_bytes(src: &Bytes, offset: usize) -> Result<Req
             .map(|header| header.value.as_bytes())
             .unwrap_or_default();
 
-        request.body = Some(parse_body(src, range.clone(), content_type)?);
-        request.span = Span::new_bytes(src.clone(), offset..range.end);
+        request.body = Some(parse_body(src, range.clone().into(), content_type)?);
+        request.span = Span::new_bytes(src.clone(), (offset..range.end).into());
     }
 
     Ok(request)
@@ -157,7 +157,7 @@ pub(crate) fn parse_response_from_bytes(
         .expect("code is present");
 
     let mut response = Response {
-        span: Span::new_bytes(src.clone(), offset..head_end),
+        span: Span::new_bytes(src.clone(), (offset..head_end).into()),
         status: Status {
             span: Span::new_str(src.clone(), status_line_range),
             code: Code(Span::new_str(src.clone(), get_span_range(src, code))),
@@ -185,8 +185,8 @@ pub(crate) fn parse_response_from_bytes(
             .map(|header| header.value.as_bytes())
             .unwrap_or_default();
 
-        response.body = Some(parse_body(src, range.clone(), content_type)?);
-        response.span = Span::new_bytes(src.clone(), offset..range.end);
+        response.body = Some(parse_body(src, body_ranges.clone(), content_type)?);
+        response.span = Span::new_bytes(src.clone(), (offset..body_ranges.end().unwrap()).into());
     }
 
     Ok(response)
@@ -206,9 +206,9 @@ fn from_header(src: &Bytes, header: &httparse::Header) -> Header {
     let header_range = name_range.start..value_range.end + crlf_idx + 2;
 
     Header {
-        span: Span::new_bytes(src.clone(), header_range),
+        span: Span::new_bytes(src.clone(), header_range.into()),
         name: HeaderName(Span::new_str(src.clone(), name_range)),
-        value: HeaderValue(Span::new_bytes(src.clone(), value_range)),
+        value: HeaderValue(Span::new_bytes(src.clone(), value_range.into())),
     }
 }
 
@@ -297,9 +297,9 @@ fn chunked_body_ranges(src: &Bytes, head_end: usize) -> Result<(RangeSet<usize>,
         let hex_digits = src[pos..]
             .iter()
             .enumerate()
-            .take_while(|(i, &b)| {
+            .take_while(|(i, b)| {
                 let next = src.get(pos + i + 1);
-                !(b == b'\r' && next == Some(&b'\n'))
+                !(**b == b'\r' && next == Some(&b'\n'))
             })
             .map(|(_, &b)| b)
             .collect::<Vec<u8>>();
@@ -337,11 +337,11 @@ fn chunked_body_ranges(src: &Bytes, head_end: usize) -> Result<(RangeSet<usize>,
 /// * `src` - The source bytes.
 /// * `range` - The range of the message body in the source bytes.
 /// * `content_type` - The value of the Content-Type header.
-fn parse_body(src: &Bytes, range: Range<usize>, content_type: &[u8]) -> Result<Body, ParseError> {
+fn parse_body(src: &Bytes, range: RangeSet<usize>, content_type: &[u8]) -> Result<Body, ParseError> {
     let span = Span::new_bytes(src.clone(), range.clone());
     let content = if content_type.get(..16) == Some(b"application/json".as_slice()) {
         let mut value = json::parse(span.data.clone())?;
-        value.offset(range.start);
+        value.offset(range.min().unwrap()); 
 
         BodyContent::Json(value)
     } else {
@@ -383,6 +383,18 @@ mod tests {
                         <h1>Hello, World!</h1>\n\
                         </body>\n\
                         </html>";
+
+    const TEST_CHUNKED_RESPONSE: &[u8] = b"\
+                        HTTP/1.1 200 OK\r\n\
+                        Date: Mon, 27 Jul 2009 12:28:53 GMT\r\n\
+                        Server: Apache/2.2.14 (Win32)\r\n\
+                        Last-Modified: Wed, 22 Jul 2009 19:15:56 GMT\r\n\
+                        Transfer-Encoding: chunked\r\n\
+                        Connection: Closed\r\n\r\n\
+                        10\r\n\
+                        Hello, World!\r\n\
+                        0\r\n\
+                        \r\n";
 
     const TEST_REQUEST2: &[u8] = b"\
                         GET /info.html HTTP/1.1\r\n\
@@ -476,7 +488,7 @@ mod tests {
         let request = Bytes::copy_from_slice(&request);
         let req = parse_request_from_bytes(&request, TEST_REQUEST2.len()).unwrap();
 
-        assert_eq!(req.span(), TEST_REQUEST);
+        assert_eq!(String::from_utf8_lossy(req.span().as_bytes()), String::from_utf8_lossy(TEST_REQUEST));
         assert_eq!(req.request.method.as_str(), "GET");
         assert_eq!(
             req.headers_with_name("Host").next().unwrap().value.span(),
@@ -491,7 +503,7 @@ mod tests {
             b"Mozilla/5.0 (Macintosh; Intel Mac OS X 10.9; rv:50.0) Gecko/20100101 Firefox/50.0"
                 .as_slice()
         );
-        assert_eq!(req.body.unwrap().span(), b"Hello World!".as_slice());
+        assert_eq!(String::from_utf8_lossy(req.body.unwrap().span().as_bytes()), "Hello World!");
     }
 
     // Make sure the first response is not parsed.
@@ -544,5 +556,16 @@ mod tests {
         };
 
         assert_eq!(value.span(), "{\"foo\": \"bar\"}");
+    }
+
+    #[test]
+    fn test_parse_chunked_response() {
+        let res = parse_response(TEST_CHUNKED_RESPONSE).unwrap();
+
+        let BodyContent::Unknown(span) = res.body.unwrap().content else {
+            panic!("body is not unknown");
+        };
+
+        assert_eq!(span.as_bytes(), b"Hello, World!");
     }
 }
