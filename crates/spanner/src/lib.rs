@@ -233,6 +233,19 @@ impl Span<[u8]> {
         }
     }
 
+    pub(crate) fn new_bytes_set(src: Bytes, ranges: RangeSet<usize>) -> Self {
+        let data = ranges.iter_ranges().fold(Vec::new(), |mut acc: Vec<u8>, range| {
+            acc.extend_from_slice(src.slice(range.clone()).as_ref());
+            acc
+        });
+
+        Self {
+            data: data.into(),
+            indices: ranges.clone(),
+            _pd: PhantomData,
+        }
+    }
+
     /// Converts this type to a byte slice.
     pub fn as_bytes(&self) -> &[u8] {
         self.as_ref()

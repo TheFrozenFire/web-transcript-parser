@@ -1,6 +1,7 @@
 use std::ops::Range;
 
 use bytes::Bytes;
+use utils::range::RangeSet;
 
 use crate::{
     helpers::get_span_range,
@@ -166,16 +167,14 @@ pub(crate) fn parse_response_from_bytes(
         body: None,
     };
 
-    let body_len = response_body_len(&response)?;
+    let (body_ranges, structure_ranges) = response_body_ranges(&response, src, head_end)?;
 
-    if body_len > 0 {
-        let range = head_end..head_end + body_len;
-
-        if range.end > src.len() {
+    if !body_ranges.is_empty() {
+        if body_ranges.end().unwrap() > src.len() {
             return Err(ParseError(format!(
                 "body range {}..{} exceeds source {}",
-                range.start,
-                range.end,
+                body_ranges.min().unwrap(),
+                body_ranges.end().unwrap(),
                 src.len()
             )));
         }
@@ -240,8 +239,9 @@ fn request_body_len(request: &Request) -> Result<usize, ParseError> {
     }
 }
 
-/// Calculates the length of the response body according to RFC 9112, section 6.
-fn response_body_len(response: &Response) -> Result<usize, ParseError> {
+/// Calculates the range(s) of the response body according to RFC 9112, section 6.
+/// Returns a tuple of the body content ranges and the body structure ranges (e.g. chunk boundaries).
+fn response_body_ranges(response: &Response, src: &Bytes, head_end: usize) -> Result<(RangeSet<usize>, Option<RangeSet<usize>>), ParseError> {
     // Any response to a HEAD request and any response with a 1xx (Informational), 204 (No Content), or 304 (Not Modified)
     // status code is always terminated by the first empty line after the header fields, regardless of the header fields
     // present in the message, and thus cannot contain a message body or trailer section.
@@ -252,24 +252,28 @@ fn response_body_len(response: &Response) -> Result<usize, ParseError> {
         .parse::<usize>()
         .expect("code is valid utf-8")
     {
-        100..=199 | 204 | 304 => return Ok(0),
+        100..=199 | 204 | 304 => return Ok((RangeSet::new(&[]), None)),
         _ => {}
     }
 
-    if response
-        .headers_with_name("Transfer-Encoding")
-        .next()
-        .is_some()
-    {
-        Err(ParseError(
-            "Transfer-Encoding not supported yet".to_string(),
-        ))
+    if let Some(h) = response.headers_with_name("Transfer-Encoding").next() {
+        match h.value.0.as_bytes().to_ascii_lowercase().as_slice() {
+            b"chunked" => {
+                Ok(chunked_body_ranges(src, head_end)?)
+            }
+            _ => return Err(ParseError(format!(
+                "Transfer-Encoding not supported: {}",
+                std::str::from_utf8(h.value.0.as_bytes())?
+            ))),
+        }
     } else if let Some(h) = response.headers_with_name("Content-Length").next() {
         // If a valid Content-Length header field is present without Transfer-Encoding, its decimal value
         // defines the expected message body length in octets.
-        std::str::from_utf8(h.value.0.as_bytes())?
+        let len = std::str::from_utf8(h.value.0.as_bytes())?
             .parse::<usize>()
-            .map_err(|err| ParseError(format!("failed to parse Content-Length value: {err}")))
+            .map_err(|err| ParseError(format!("failed to parse Content-Length value: {err}")))?;
+
+        Ok((RangeSet::new(&[head_end..head_end + len]), None))
     } else {
         // If this is a response message and none of the above are true, then there is no way to
         // determine the length of the message body except by reading it until the connection is closed.
@@ -279,6 +283,51 @@ fn response_body_len(response: &Response) -> Result<usize, ParseError> {
             "A response with a body must contain either a Content-Length or Transfer-Encoding header".to_string(),
         ))
     }
+}
+
+fn chunked_body_ranges(src: &Bytes, head_end: usize) -> Result<(RangeSet<usize>, Option<RangeSet<usize>>), ParseError> {
+    let mut content_ranges: Vec<Range<usize>> = Vec::new();
+    let mut structure_ranges: Vec<Range<usize>> = Vec::new();
+    let mut pos = head_end;
+    
+    // At the beginning of each chunk, a string of hex digits indicate the size of the chunk-data
+    // in octets, followed by \r\n and then the chunk itself, followed by another \r\n.
+    loop {
+        // Read the hex digits until we encounter a CRLF
+        let hex_digits = src[pos..]
+            .iter()
+            .enumerate()
+            .take_while(|(i, &b)| {
+                let next = src.get(pos + i + 1);
+                !(b == b'\r' && next == Some(&b'\n'))
+            })
+            .map(|(_, &b)| b)
+            .collect::<Vec<u8>>();
+        
+        let chunk_size = usize::from_str_radix(
+            std::str::from_utf8(&hex_digits)?,
+            16,
+        ).map_err(|err| ParseError(format!("failed to parse chunk size: {err}")))?;
+
+        // The range of the chunk boundary is the length of the hex digits + CRLF.
+        structure_ranges.push(pos..pos + hex_digits.len() + 2);
+        pos += hex_digits.len() + 2;
+
+        // The terminating chunk is a zero-length chunk.
+        if chunk_size == 0 {
+            // Check for final CRLF after chunk
+            if src[pos + 2..].windows(2).next() != Some(b"\r\n") {
+                return Err(ParseError("invalid terminating chunk".to_string()));
+            }
+            break;
+        }
+
+        // Skip past the chunk header (hex digits + CRLF) and the chunk data (+ CRLF)
+        content_ranges.push(pos..pos + chunk_size);
+        pos += chunk_size + 2;
+    }
+
+    Ok((RangeSet::new(&content_ranges), Some(RangeSet::new(&structure_ranges))))
 }
 
 /// Parses a request or response message body.
