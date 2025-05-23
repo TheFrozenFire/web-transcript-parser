@@ -223,17 +223,12 @@ impl Span<[u8]> {
     /// # Panics
     ///
     /// Panics if the given range is not within the source bytes.
-    pub(crate) fn new_bytes(src: Bytes, range: RangeSet<usize>) -> Self {
-        assert!(src.len() >= range.end().unwrap(), "span is not within source bytes");
-
-        let data = range.iter_ranges().fold(Vec::new(), |mut acc: Vec<u8>, range| {
-            acc.extend_from_slice(src.slice(range.clone()).as_ref());
-            acc
-        });
+    pub(crate) fn new_bytes(src: Bytes, range: Range<usize>) -> Self {
+        assert!(src.len() >= range.end, "span is not within source bytes");
 
         Self {
-            data: data.into(),
-            indices: range,
+            data: src.slice(range.clone()),
+            indices: range.into(),
             _pd: PhantomData,
         }
     }

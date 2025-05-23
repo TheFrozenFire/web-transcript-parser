@@ -167,7 +167,7 @@ pub(crate) fn parse_response_from_bytes(
         body: None,
     };
 
-    let (body_ranges, structure_ranges) = response_body_ranges(&response, src, head_end)?;
+    let (body_ranges, _structure_ranges) = response_body_ranges(&response, src, head_end)?;
 
     if !body_ranges.is_empty() {
         if body_ranges.end().unwrap() > src.len() {
@@ -186,7 +186,7 @@ pub(crate) fn parse_response_from_bytes(
             .unwrap_or_default();
 
         response.body = Some(parse_body(src, body_ranges.clone(), content_type)?);
-        response.span = Span::new_bytes(src.clone(), (offset..body_ranges.end().unwrap()).into());
+        response.span = Span::new_bytes_set(src.clone(), (offset..body_ranges.end().unwrap()).into());
     }
 
     Ok(response)
@@ -316,7 +316,7 @@ fn chunked_body_ranges(src: &Bytes, head_end: usize) -> Result<(RangeSet<usize>,
         // The terminating chunk is a zero-length chunk.
         if chunk_size == 0 {
             // Check for final CRLF after chunk
-            if src[pos + 2..].windows(2).next() != Some(b"\r\n") {
+            if src[pos..].windows(2).next() != Some(b"\r\n") {
                 return Err(ParseError("invalid terminating chunk".to_string()));
             }
             break;
@@ -338,7 +338,7 @@ fn chunked_body_ranges(src: &Bytes, head_end: usize) -> Result<(RangeSet<usize>,
 /// * `range` - The range of the message body in the source bytes.
 /// * `content_type` - The value of the Content-Type header.
 fn parse_body(src: &Bytes, range: RangeSet<usize>, content_type: &[u8]) -> Result<Body, ParseError> {
-    let span = Span::new_bytes(src.clone(), range.clone());
+    let span = Span::new_bytes_set(src.clone(), range.clone());
     let content = if content_type.get(..16) == Some(b"application/json".as_slice()) {
         let mut value = json::parse(span.data.clone())?;
         value.offset(range.min().unwrap()); 
@@ -391,7 +391,7 @@ mod tests {
                         Last-Modified: Wed, 22 Jul 2009 19:15:56 GMT\r\n\
                         Transfer-Encoding: chunked\r\n\
                         Connection: Closed\r\n\r\n\
-                        10\r\n\
+                        D\r\n\
                         Hello, World!\r\n\
                         0\r\n\
                         \r\n";
@@ -488,7 +488,7 @@ mod tests {
         let request = Bytes::copy_from_slice(&request);
         let req = parse_request_from_bytes(&request, TEST_REQUEST2.len()).unwrap();
 
-        assert_eq!(String::from_utf8_lossy(req.span().as_bytes()), String::from_utf8_lossy(TEST_REQUEST));
+        assert_eq!(req.span().as_bytes(), TEST_REQUEST);
         assert_eq!(req.request.method.as_str(), "GET");
         assert_eq!(
             req.headers_with_name("Host").next().unwrap().value.span(),
@@ -503,7 +503,7 @@ mod tests {
             b"Mozilla/5.0 (Macintosh; Intel Mac OS X 10.9; rv:50.0) Gecko/20100101 Firefox/50.0"
                 .as_slice()
         );
-        assert_eq!(String::from_utf8_lossy(req.body.unwrap().span().as_bytes()), "Hello World!");
+        assert_eq!(req.body.unwrap().span(), b"Hello World!".as_slice());
     }
 
     // Make sure the first response is not parsed.
