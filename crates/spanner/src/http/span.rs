@@ -198,9 +198,17 @@ pub(crate) fn parse_response_from_bytes(
         response.boundaries = Some(structure_ranges.iter_ranges().map(|range| {
             Boundary(Span::new_str(src.clone(), range.clone().into()))
         }).collect());
-        response.span = Span::new_bytes_set(src.clone(), (offset..structure_ranges.end().unwrap()).into());
-    }
+        response.span = Span::new_bytes_set(src.clone(), (offset..structure_ranges.end().unwrap() + 2).into());
 
+        if let Some(trailer_ranges) = trailer_ranges {
+            if !trailer_ranges.is_empty() {
+                response.span = Span::new_bytes_set(src.clone(), (offset..trailer_ranges.end().unwrap() + 2).into());
+            } else {
+                response.span = Span::new_bytes(src.clone(), (offset..structure_ranges.end().unwrap() + 2).into());
+            }
+        }
+    }
+    
     Ok(response)
 }
 
@@ -330,12 +338,11 @@ fn chunked_body_ranges(src: &Bytes, head_end: usize) -> Result<(RangeSet<usize>,
         if chunk_size == 0 {
             // Parse trailing headers
             if src[pos..].windows(2).next() != Some(b"\r\n") {
-                trailer_ranges.push(pos..src.len()-2);
-                pos = src.len()-2;
-
-                if src[pos..].windows(2).next() != Some(b"\r\n") {
-                    return Err(ParseError("invalid terminating chunk".to_string()));
-                }
+                let trailer_end = src[pos..]
+                    .windows(4)
+                    .position(|w| w == b"\r\n\r\n")
+                    .ok_or_else(|| ParseError("missing trailer end".to_string()))? + pos;
+                trailer_ranges.push(pos..trailer_end);
             }
 
             break;
