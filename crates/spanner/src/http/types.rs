@@ -347,6 +347,34 @@ impl ToRangeSet<usize> for Status {
     }
 }
 
+/// A boundary for chunked encoding.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Boundary(pub(crate) Span<str>);
+
+impl Boundary {
+    /// Returns the boundary as a string slice.
+    pub fn as_str(&self) -> &str {
+        self.0.as_str()
+    }
+
+    /// Shifts the span range by the given offset.
+    pub fn offset(&mut self, offset: usize) {
+        self.0.offset(offset);
+    }
+}
+
+impl Spanned<str> for Boundary {
+    fn span(&self) -> &Span<str> {
+        &self.0
+    }
+}
+
+impl ToRangeSet<usize> for Boundary {
+    fn to_range_set(&self) -> RangeSet<usize> {
+        self.0.indices.clone()
+    }
+}
+
 /// An HTTP response.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
@@ -358,6 +386,10 @@ pub struct Response {
     pub headers: Vec<Header>,
     /// Response body.
     pub body: Option<Body>,
+    /// Boundary for chunked encoding.
+    pub boundaries: Option<Vec<Boundary>>,
+    /// Trailer headers.
+    pub trailers: Option<Vec<Header>>,
 }
 
 impl Response {

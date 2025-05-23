@@ -6,7 +6,7 @@ use rangeset::RangeSet;
 use crate::{
     helpers::get_span_range,
     http::{
-        Body, BodyContent, Code, Header, HeaderName, HeaderValue, Method, Reason, Request,
+        Body, BodyContent, Boundary, Code, Header, HeaderName, HeaderValue, Method, Reason, Request,
         RequestLine, Response, Status, Target,
     },
     json, ParseError, Span,
@@ -118,6 +118,8 @@ pub(crate) fn parse_response_from_bytes(
     let (reason, code, head_end) = {
         let mut response = httparse::Response::new(&mut headers);
 
+        println!("About to parse response: {}", String::from_utf8_lossy(&src[offset..]));
+
         let head_end = match response.parse(&src[offset..]) {
             Ok(httparse::Status::Complete(head_end)) => head_end + offset,
             Ok(httparse::Status::Partial) => {
@@ -125,6 +127,8 @@ pub(crate) fn parse_response_from_bytes(
             }
             Err(err) => return Err(ParseError(err.to_string())),
         };
+
+        println!("Parsed response");
 
         let code = response
             .code
@@ -165,9 +169,11 @@ pub(crate) fn parse_response_from_bytes(
         },
         headers,
         body: None,
+        boundaries: None,
+        trailers: None,
     };
 
-    let (body_ranges, _structure_ranges) = response_body_ranges(&response, src, head_end)?;
+    let (body_ranges, structure_ranges, trailer_ranges) = response_body_ranges(&response, src, head_end)?;
 
     if !body_ranges.is_empty() {
         if body_ranges.end().unwrap() > src.len() {
@@ -187,6 +193,12 @@ pub(crate) fn parse_response_from_bytes(
 
         response.body = Some(parse_body(src, body_ranges.clone(), content_type)?);
         response.span = Span::new_bytes_set(src.clone(), (offset..body_ranges.end().unwrap()).into());
+    }
+    if let Some(structure_ranges) = structure_ranges {
+        response.boundaries = Some(structure_ranges.iter_ranges().map(|range| {
+            Boundary(Span::new_str(src.clone(), range.clone().into()))
+        }).collect());
+        response.span = Span::new_bytes_set(src.clone(), (offset..structure_ranges.end().unwrap()).into());
     }
 
     Ok(response)
@@ -240,8 +252,8 @@ fn request_body_len(request: &Request) -> Result<usize, ParseError> {
 }
 
 /// Calculates the range(s) of the response body according to RFC 9112, section 6.
-/// Returns a tuple of the body content ranges and the body structure ranges (e.g. chunk boundaries).
-fn response_body_ranges(response: &Response, src: &Bytes, head_end: usize) -> Result<(RangeSet<usize>, Option<RangeSet<usize>>), ParseError> {
+/// Returns a tuple of the body content ranges, the body structure ranges (e.g. chunk boundaries), and the trailer ranges.
+fn response_body_ranges(response: &Response, src: &Bytes, head_end: usize) -> Result<(RangeSet<usize>, Option<RangeSet<usize>>, Option<RangeSet<usize>>), ParseError> {
     // Any response to a HEAD request and any response with a 1xx (Informational), 204 (No Content), or 304 (Not Modified)
     // status code is always terminated by the first empty line after the header fields, regardless of the header fields
     // present in the message, and thus cannot contain a message body or trailer section.
@@ -252,7 +264,7 @@ fn response_body_ranges(response: &Response, src: &Bytes, head_end: usize) -> Re
         .parse::<usize>()
         .expect("code is valid utf-8")
     {
-        100..=199 | 204 | 304 => return Ok((RangeSet::new(&[]), None)),
+        100..=199 | 204 | 304 => return Ok((RangeSet::new(&[]), None, None)),
         _ => {}
     }
 
@@ -273,7 +285,7 @@ fn response_body_ranges(response: &Response, src: &Bytes, head_end: usize) -> Re
             .parse::<usize>()
             .map_err(|err| ParseError(format!("failed to parse Content-Length value: {err}")))?;
 
-        Ok((RangeSet::new(&[head_end..head_end + len]), None))
+        Ok((RangeSet::new(&[head_end..head_end + len]), None, None))
     } else {
         // If this is a response message and none of the above are true, then there is no way to
         // determine the length of the message body except by reading it until the connection is closed.
@@ -285,9 +297,10 @@ fn response_body_ranges(response: &Response, src: &Bytes, head_end: usize) -> Re
     }
 }
 
-fn chunked_body_ranges(src: &Bytes, head_end: usize) -> Result<(RangeSet<usize>, Option<RangeSet<usize>>), ParseError> {
+fn chunked_body_ranges(src: &Bytes, head_end: usize) -> Result<(RangeSet<usize>, Option<RangeSet<usize>>, Option<RangeSet<usize>>), ParseError> {
     let mut content_ranges: Vec<Range<usize>> = Vec::new();
     let mut structure_ranges: Vec<Range<usize>> = Vec::new();
+    let mut trailer_ranges: Vec<Range<usize>> = Vec::new();
     let mut pos = head_end;
     
     // At the beginning of each chunk, a string of hex digits indicate the size of the chunk-data
@@ -315,10 +328,16 @@ fn chunked_body_ranges(src: &Bytes, head_end: usize) -> Result<(RangeSet<usize>,
 
         // The terminating chunk is a zero-length chunk.
         if chunk_size == 0 {
-            // Check for final CRLF after chunk
+            // Parse trailing headers
             if src[pos..].windows(2).next() != Some(b"\r\n") {
-                return Err(ParseError("invalid terminating chunk".to_string()));
+                trailer_ranges.push(pos..src.len()-2);
+                pos = src.len()-2;
+
+                if src[pos..].windows(2).next() != Some(b"\r\n") {
+                    return Err(ParseError("invalid terminating chunk".to_string()));
+                }
             }
+
             break;
         }
 
@@ -327,7 +346,7 @@ fn chunked_body_ranges(src: &Bytes, head_end: usize) -> Result<(RangeSet<usize>,
         pos += chunk_size + 2;
     }
 
-    Ok((RangeSet::new(&content_ranges), Some(RangeSet::new(&structure_ranges))))
+    Ok((RangeSet::new(&content_ranges), Some(RangeSet::new(&structure_ranges)), Some(RangeSet::new(&trailer_ranges))))
 }
 
 /// Parses a request or response message body.
