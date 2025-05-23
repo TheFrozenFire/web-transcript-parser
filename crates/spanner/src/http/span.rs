@@ -118,8 +118,6 @@ pub(crate) fn parse_response_from_bytes(
     let (reason, code, head_end) = {
         let mut response = httparse::Response::new(&mut headers);
 
-        println!("About to parse response: {}", String::from_utf8_lossy(&src[offset..]));
-
         let head_end = match response.parse(&src[offset..]) {
             Ok(httparse::Status::Complete(head_end)) => head_end + offset,
             Ok(httparse::Status::Partial) => {
@@ -127,8 +125,6 @@ pub(crate) fn parse_response_from_bytes(
             }
             Err(err) => return Err(ParseError(err.to_string())),
         };
-
-        println!("Parsed response");
 
         let code = response
             .code

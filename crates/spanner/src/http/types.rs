@@ -349,6 +349,7 @@ impl ToRangeSet<usize> for Status {
 
 /// A boundary for chunked encoding.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct Boundary(pub(crate) Span<str>);
 
 impl Boundary {
