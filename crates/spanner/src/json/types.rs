@@ -88,6 +88,40 @@ impl JsonValue {
             JsonValue::Object(v) => v.get(path),
         }
     }
+
+    /// Get a reference to the key-value pair using the given path.
+    pub fn get_keyvalue(&self, path: &str) -> Option<KeyValue> {
+        let  path_without_last_key = path.rsplitn(2, '.').nth(1);
+
+        if path_without_last_key.is_none() {
+            if let JsonValue::Object(obj) = self {
+                return obj.get_keyvalue(path);
+            } else {
+                return None;
+            }
+        }
+
+        let  path_without_last_key = path_without_last_key.unwrap();
+        let last_key = path.rsplitn(2, '.').nth(0).unwrap();
+
+        match self {
+            JsonValue::Array(v) => {
+                if let JsonValue::Object(parent) = v.get(path_without_last_key)? {
+                    parent.get_keyvalue(last_key)
+                } else {
+                    None
+                }
+            },
+            JsonValue::Object(v) => {
+                if let JsonValue::Object(parent) = v.get(path_without_last_key)? {
+                    parent.get_keyvalue(last_key)
+                } else {
+                    None
+                }
+            },
+            _ => None,
+        }
+    }
 }
 
 impl Spanned<str> for JsonValue {
@@ -331,26 +365,22 @@ pub struct Object {
 impl Object {
     /// Get a reference to the value using the given path.
     pub fn get(&self, path: &str) -> Option<&JsonValue> {
-        self.get_keyvalue(path).map(|kv| &kv.value)
-    }
-
-    /// Get a reference to the key value pair using the given path.
-    pub fn get_keyvalue(&self, path: &str) -> Option<&KeyValue> {
         let mut path_iter = path.split('.');
 
         let key = path_iter.next()?;
 
-        let keyvalue = self.elems.iter().find(|kv| kv.key == key)?;
+        let KeyValue { value, .. } = self.elems.iter().find(|kv| kv.key == key)?;
 
         if path_iter.next().is_some() {
-            if let JsonValue::Object(obj) = &keyvalue.value {
-                obj.get_keyvalue(&path[key.len() + 1..])
-            } else {
-                None
-            }
+            value.get(&path[key.len() + 1..])
         } else {
-            Some(keyvalue)
+            Some(value)
         }
+    }
+
+    /// Get a reference to the key value pair using the given key.
+    pub fn get_keyvalue(&self, key: &str) -> Option<KeyValue> {
+        self.elems.iter().find(|kv| kv.key == key).cloned()
     }
 
     /// Returns the indices of the object, excluding the key value pairs.
