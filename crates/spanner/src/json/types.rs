@@ -586,30 +586,30 @@ mod tests {
 
     #[test]
     fn test_redacted_one_byte() {
-        let src = "\0";
+        let src = "*";
         let value = parse_str(src).unwrap();
-        assert_eq!(value.span(), "\0");
+        assert_eq!(value.span(), "*");
     }
 
     #[test]
     fn test_redacted_value() {
-        let src = "\0\0\0";
+        let src = "****";
         let value = parse_str(src).unwrap();
-        assert_eq!(value.span(), "\0\0\0");
+        assert_eq!(value.span(), "****");
     }
 
     #[test]
     fn test_redacted_value_in_object() {
-        let src = "{\"foo\": \0\0\0}";
+        let src = "{\"foo\": ****}";
         let value = parse_str(src).unwrap();
-        assert_eq!(value.get("foo").unwrap().span(), "\0\0\0");
+        assert_eq!(value.get("foo").unwrap().span(), "****");
     }
 
     #[test]
     fn test_redacted_value_in_array() {
-        let src = "[1, \0\0\0]";
+        let src = "[1, ****]";
         let value = parse_str(src).unwrap();
-        assert_eq!(value.get("1").unwrap().span(), "\0\0\0");
+        assert_eq!(value.get("1").unwrap().span(), "****");
     }
     
     
