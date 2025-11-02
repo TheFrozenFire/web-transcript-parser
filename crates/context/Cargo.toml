@@ -1,0 +1,9 @@
+[package]
+name = "http-transcript-context"
+version = "0.1.0"
+edition = "2021"
+description = "Contextual integrity for HTTP transcripts"
+license = "MIT"
+
+[dependencies]
+spanner = { workspace = true }

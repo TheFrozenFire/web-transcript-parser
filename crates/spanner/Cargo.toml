@@ -1,10 +1,9 @@
 [package]
-name = "spansy"
+name = "spannner"
 version = "0.1.0"
 edition = "2021"
 description = "Parsing with span information"
-repository = "https://github.com/tlsnotary/tlsn-utils"
-license = "MIT OR Apache-2.0"
+license = "MIT"
 
 [features]
 default = []
@@ -13,9 +12,9 @@ serde = ["dep:serde", "bytes/serde", "rangeset/serde"]
 [dependencies]
 rangeset = { workspace = true }
 
-bytes.workspace = true
+bytes = { workspace = true }
 serde = { workspace = true, features = ["derive"], optional = true }
-thiserror.workspace = true
+thiserror = { workspace = true }
 
 httparse = "1.8"
 pest = { version = "2.7" }

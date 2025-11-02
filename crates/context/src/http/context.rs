@@ -1,6 +1,6 @@
 use tlsn_attestation::presentation::PresentationOutput;
-use tlsn_core::connection::ServerName;
-use spansy::http::{Request, Body, BodyContent};
+
+use spanner::http::{Request, Body, BodyContent};
 
 use crate::http::HttpTranscript;
 use crate::json::JsonContext;
@@ -14,7 +14,6 @@ use serde::{Serialize, Serializer};
 /// See the [module level documentation](crate::context) for more information.
 #[derive(Debug, Serialize)]
 pub struct HttpContext {
-    server_name: Option<String>,
     requests: Vec<RequestContext>,
     responses: Vec<ResponseContext>,
 }
@@ -196,13 +195,7 @@ impl HttpContextBuilder {
             });
         }
 
-        let server_name = match &self.presentation.server_name {
-            Some(ServerName::Dns(name)) => Some(name.as_str().to_string()),
-            None => None,
-        };
-
         Ok(HttpContext {
-            server_name,
             requests: request_contexts,
             responses: response_contexts,
         })

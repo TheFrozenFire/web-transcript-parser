@@ -1,0 +1,9 @@
+[workspace]
+members = [
+    "crates/context",
+    "crates/spanner",
+]
+
+[workspace.dependencies]
+spanner = { path = "crates/spanner" }
+context = { path = "crates/context" }

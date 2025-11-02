@@ -1,6 +1,6 @@
-use spansy::json::JsonValue;
-use spansy::json as types;
-use spansy::Spanned;
+use spanner::json::JsonValue;
+use spanner::json as types;
+use spanner::Spanned;
 
 use serde::{Serialize, Serializer};
 use serde_json::Value as SerdeJsonValue;
