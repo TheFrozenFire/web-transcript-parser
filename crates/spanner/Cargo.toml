@@ -1,5 +1,5 @@
 [package]
-name = "spannner"
+name = "spanner"
 version = "0.1.0"
 edition = "2021"
 description = "Parsing with span information"

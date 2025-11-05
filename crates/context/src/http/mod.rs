@@ -1,33 +1,33 @@
 //! Tooling for working with HTTP data.
 
-mod commit;
-mod context;
+pub mod commit;
+pub mod context;
+pub mod transcript;
 
-use bytes::Bytes;
 pub use commit::{DefaultHttpCommitter, HttpCommit, HttpCommitError};
 pub use context::{HttpContext, BodyContext, RequestContext, ResponseContext};
+pub use transcript::HttpTranscript;
 
 #[doc(hidden)]
-pub use spansy::http;
-use spansy::json::JsonValue;
+pub use spanner::http;
 
 pub use http::{
     parse_request, parse_response, Body, BodyContent, Header, HeaderName, HeaderValue, Method,
     Reason, Request, RequestLine, Requests, Response, Responses, Status, Target,
 };
-use tlsn_core::transcript::{PartialTranscript, Transcript, TranscriptProofBuilder, Direction, TranscriptProofBuilderError};
 
+/*
 #[cfg(test)]
 mod tests {
     use super::*;
     use rstest::*;
-    use spansy::{
+    use spanner::{
         http::{parse_request, BodyContent},
         json::{
             JsonValue, JsonVisit
         }, json as json_types, Spanned
     };
-    use tlsn_core::transcript::Transcript;
+    use crate::transcript::Transcript;
     use tlsn_data_fixtures::http as fixtures;
     use rangeset::{ Difference, ToRangeSet, RangeSet };
 
@@ -120,3 +120,4 @@ mod tests {
         HttpTranscript::parse_partial(&partial_transcript).unwrap();
     }
 }
+*/

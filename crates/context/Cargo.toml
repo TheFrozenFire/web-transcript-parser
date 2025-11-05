@@ -6,4 +6,14 @@ description = "Contextual integrity for HTTP transcripts"
 license = "MIT"
 
 [dependencies]
+bytes = { workspace = true }
 spanner = { workspace = true }
+http = { workspace = true }
+rangeset = { workspace = true, features = ["serde"] }
+serde = { workspace = true, features = ["derive"] }
+thiserror = { workspace = true }
+url = { workspace = true }
+
+[dev-dependencies]
+rstest = { workspace = true }
+bincode = { workspace = true }

@@ -18,40 +18,20 @@
 //! always learns the length of the transcript, but sensitive data can be
 //! withheld.
 
-mod commit;
-pub mod encoding;
-pub mod hash;
-mod proof;
-mod tls;
-
 use std::{fmt, ops::Range};
 
 use rangeset::{Difference, IndexRanges, RangeSet, Union};
 use serde::{Deserialize, Serialize};
 
-use crate::connection::TranscriptLength;
-
-pub use commit::{
-    TranscriptCommitConfig, TranscriptCommitConfigBuilder, TranscriptCommitConfigBuilderError,
-    TranscriptCommitRequest, TranscriptCommitment, TranscriptCommitmentKind, TranscriptSecret,
-};
-pub use proof::{
-    TranscriptProof, TranscriptProofBuilder, TranscriptProofBuilderError, TranscriptProofError,
-};
-pub use tls::{Record, TlsTranscript};
-pub use tls_core::msgs::enums::ContentType;
-
 /// A transcript contains the plaintext of all application data communicated
-/// between the Prover and the Server.
+/// between the Client and the Server.
 #[derive(Clone, Serialize, Deserialize)]
 pub struct Transcript {
-    /// Data sent from the Prover to the Server.
+    /// Data sent from the Client to the Server.
     sent: Vec<u8>,
-    /// Data received by the Prover from the Server.
+    /// Data received by the Client from the Server.
     received: Vec<u8>,
 }
-
-opaque_debug::implement!(Transcript);
 
 impl Transcript {
     /// Creates a new transcript.
@@ -413,6 +393,15 @@ impl PartialTranscript {
             }
         }
     }
+}
+
+/// Transcript length information.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TranscriptLength {
+    /// Number of bytes sent by the Prover to the Server.
+    pub sent: u32,
+    /// Number of bytes received by the Prover from the Server.
+    pub received: u32,
 }
 
 /// The direction of data communicated over a TLS connection.

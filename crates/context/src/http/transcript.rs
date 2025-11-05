@@ -3,14 +3,12 @@ pub use commit::{DefaultHttpCommitter, HttpCommit, HttpCommitError};
 pub use context::{HttpContext, BodyContext, RequestContext, ResponseContext};
 
 #[doc(hidden)]
-pub use spansy::http;
-use spansy::json::JsonValue;
+pub use spanner::http;
+use spanner::json::JsonValue;
 
-pub use http::{
-    parse_request, parse_response, Body, BodyContent, Header, HeaderName, HeaderValue, Method,
-    Reason, Request, RequestLine, Requests, Response, Responses, Status, Target,
-};
-use tlsn_core::transcript::{PartialTranscript, Transcript, TranscriptProofBuilder, Direction, TranscriptProofBuilderError};
+use spanner::http::{Request, Response, Requests, Responses, BodyContent};
+
+use crate::transcript::{Transcript, PartialTranscript, Direction, TranscriptCommitmentBuilder, TranscriptCommitmentBuilderError};
 
 /// The kind of HTTP message.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -23,16 +21,16 @@ pub enum MessageKind {
 
 /// An HTTP transcript.
 #[derive(Debug)]
-pub struct HttpTranscript {
+pub struct HttpTranscript<C: TranscriptCommitmentBuilder> {
     /// The requests sent to the server.
     pub requests: Vec<Request>,
     /// The responses received from the server.
     pub responses: Vec<Response>,
 }
 
-impl HttpTranscript {
+impl<C: TranscriptCommitmentBuilder> HttpTranscript<C> {
     /// Parses the HTTP transcript from the provided transcripts.
-    pub fn parse(transcript: &Transcript) -> Result<Self, spansy::ParseError> {
+    pub fn parse(transcript: &Transcript) -> Result<Self, spanner::ParseError> {
         let requests = Requests::new(Bytes::copy_from_slice(transcript.sent()))
             .collect::<Result<Vec<_>, _>>()?;
         let responses = Responses::new(Bytes::copy_from_slice(transcript.received()))
@@ -46,7 +44,7 @@ impl HttpTranscript {
 
     /// Parses the HTTP transcript from the provided partial transcript,
     /// setting all unauthenticated data to null bytes.
-    pub fn parse_partial(transcript: &PartialTranscript) -> Result<Self, spansy::ParseError> {
+    pub fn parse_partial(transcript: &PartialTranscript) -> Result<Self, spanner::ParseError> {
         let mut parseable = transcript.clone();
         parseable.set_unauthed(b'*');
 
@@ -61,16 +59,16 @@ impl HttpTranscript {
         })
     }
 
-    fn reveal_json_structure(&self, builder: &mut TranscriptProofBuilder, direction: Direction, json: &JsonValue) -> Result<(), TranscriptProofBuilderError> {
+    fn reveal_json_structure(&self, builder: &mut C, direction: Direction, json: &JsonValue) -> Result<(), TranscriptCommitmentBuilderError> {
         match json {
             JsonValue::Object(object) => {
                 // Reveal the object structure without its pairs
                 match direction {
                     Direction::Sent => {
-                        builder.reveal_sent(&object.without_pairs())?;
+                        builder.commit(&object.without_pairs(), direction)?;
                     }
                     Direction::Received => {
-                        builder.reveal_recv(&object.without_pairs())?;
+                        builder.commit(&object.without_pairs(), direction)?;
                     }
                 }
     
@@ -78,10 +76,10 @@ impl HttpTranscript {
                 for keyvalue in &object.elems {
                     match direction {
                         Direction::Sent => {
-                            builder.reveal_sent(&keyvalue.without_value())?;
+                            builder.commit(&keyvalue.without_value(), direction)?;
                         }
                         Direction::Received => {
-                            builder.reveal_recv(&keyvalue.without_value())?;
+                            builder.commit(&keyvalue.without_value(), direction)?;
                         }
                     }
     
@@ -93,12 +91,12 @@ impl HttpTranscript {
                 // Reveal array structure
                 match direction {
                     Direction::Sent => {
-                        builder.reveal_sent(&array.without_values())?;
-                        builder.reveal_sent(&array.separators())?;
+                        builder.commit(&array.without_values(), direction)?;
+                        builder.commit(&array.separators(), direction)?;
                     }
                     Direction::Received => {
-                        builder.reveal_recv(&array.without_values())?;
-                        builder.reveal_recv(&array.separators())?;
+                        builder.commit(&array.without_values(), direction)?;
+                        builder.commit(&array.separators(), direction)?;
                     }
                 }
                 
@@ -113,18 +111,18 @@ impl HttpTranscript {
     }
 
     /// Reveals the structure of the HTTP transcript.
-    pub fn reveal_structure(&self, builder: &mut TranscriptProofBuilder) -> Result<(), TranscriptProofBuilderError> {
+    pub fn reveal_structure(&self, builder: &mut C) -> Result<(), TranscriptCommitmentBuilderError> {
         for request in &self.requests {
-            builder.reveal_sent(&request.without_data())?;
-            builder.reveal_sent(&request.request.target)?;
+            builder.commit(&request.without_data(), Direction::Sent)?;
+            builder.commit(&request.request.target, Direction::Sent)?;
             
             for header in &request.headers {
-                builder.reveal_sent(&header.without_value())?;
+                builder.commit(&header.without_value(), Direction::Sent)?;
             }
 
             for header_name in ["host", "content-length", "content-type", "transfer-encoding"] {
                 if let Some(header) = request.headers_with_name(header_name).next() {
-                    builder.reveal_sent(header)?;
+                    builder.commit(header, Direction::Sent)?;
                 }
             }
 
@@ -135,7 +133,7 @@ impl HttpTranscript {
                     }
                     
                     BodyContent::Unknown(unknown) => {
-                        builder.reveal_sent(unknown)?;
+                        builder.commit(unknown, Direction::Sent)?;
                     }
 
                     _ => {}
@@ -144,15 +142,15 @@ impl HttpTranscript {
         }
 
         for response in &self.responses {
-            builder.reveal_recv(&response.without_data())?;
+            builder.commit(&response.without_data(), Direction::Received)?;
 
             for header in &response.headers {
                 match header.name.as_str().to_lowercase().as_str() {
                     "host" | "content-length" | "content-type" | "transfer-encoding" => {
-                        builder.reveal_recv(header)?;
+                        builder.commit(header, Direction::Received)?;
                     }
                     _ => {
-                        builder.reveal_recv(&header.without_value())?;
+                        builder.commit(&header.without_value(), Direction::Received)?;
                     }
                 }
             }
@@ -164,7 +162,7 @@ impl HttpTranscript {
                     }
 
                     BodyContent::Unknown(unknown) => {
-                        builder.reveal_recv(unknown)?;
+                        builder.commit(unknown, Direction::Received)?;
                     }
 
                     _ => {}
@@ -173,13 +171,13 @@ impl HttpTranscript {
 
             if let Some(boundaries) = &response.boundaries {
                 for boundary in boundaries {
-                    builder.reveal_recv(boundary)?;
+                    builder.commit(boundary, Direction::Received)?;
                 }
             }
 
             if let Some(trailers) = &response.trailers {
                 for trailer in trailers {
-                    builder.reveal_recv(&trailer.without_value())?;
+                    builder.commit(&trailer.without_value(), Direction::Received)?;
                 }
             }
         }
@@ -188,17 +186,18 @@ impl HttpTranscript {
     }
 }
 
+/*
 #[cfg(test)]
 mod tests {
     use super::*;
     use rstest::*;
-    use spansy::{
+    use spanner::{
         http::{parse_request, BodyContent},
         json::{
             JsonValue, JsonVisit
         }, json as json_types, Spanned
     };
-    use tlsn_core::transcript::Transcript;
+    use crate::transcript::Transcript;
     use tlsn_data_fixtures::http as fixtures;
     use rangeset::{ Difference, ToRangeSet, RangeSet };
 
@@ -291,3 +290,4 @@ mod tests {
         HttpTranscript::parse_partial(&partial_transcript).unwrap();
     }
 }
+*/

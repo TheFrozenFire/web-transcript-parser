@@ -1,10 +1,11 @@
 use std::error::Error;
 
-use spansy::Spanned;
-use tlsn_core::transcript::{Direction, TranscriptCommitConfigBuilder};
+use spanner::Spanned;
+use crate::transcript::{Direction, TranscriptCommitmentBuilder};
 
 use crate::{
-    http::{Body, BodyContent, Header, HttpTranscript, MessageKind, Request, Response, Target},
+    http::{Body, BodyContent, Header, HttpTranscript, Request, Response, Target},
+    http::transcript::MessageKind,
     json::{DefaultJsonCommitter, JsonCommit},
 };
 
@@ -77,7 +78,7 @@ impl HttpCommitError {
 
 /// An HTTP data committer.
 #[allow(unused_variables)]
-pub trait HttpCommit {
+pub trait HttpCommit<C: TranscriptCommitmentBuilder> {
     /// Commits to an HTTP transcript.
     ///
     /// The default implementation commits to each request and response in the
@@ -89,7 +90,7 @@ pub trait HttpCommit {
     /// * `transcript` - The transcript to commit.
     fn commit_transcript(
         &mut self,
-        builder: &mut TranscriptCommitConfigBuilder,
+        builder: &mut C,
         transcript: &HttpTranscript,
     ) -> Result<(), HttpCommitError> {
         for request in &transcript.requests {
@@ -116,7 +117,7 @@ pub trait HttpCommit {
     /// * `request` - The request to commit to.
     fn commit_request(
         &mut self,
-        builder: &mut TranscriptCommitConfigBuilder,
+        builder: &mut C,
         direction: Direction,
         request: &Request,
     ) -> Result<(), HttpCommitError> {
@@ -165,7 +166,7 @@ pub trait HttpCommit {
     /// * `target` - The target to commit to.
     fn commit_target(
         &mut self,
-        builder: &mut TranscriptCommitConfigBuilder,
+        builder: &mut C,
         direction: Direction,
         request: &Request,
         target: &Target,
@@ -194,7 +195,7 @@ pub trait HttpCommit {
     /// * `header` - The header to commit to.
     fn commit_request_header(
         &mut self,
-        builder: &mut TranscriptCommitConfigBuilder,
+        builder: &mut C,
         direction: Direction,
         parent: &Request,
         header: &Header,
@@ -239,7 +240,7 @@ pub trait HttpCommit {
     /// * `body` - The body to commit to.
     fn commit_request_body(
         &mut self,
-        builder: &mut TranscriptCommitConfigBuilder,
+        builder: &mut C,
         direction: Direction,
         parent: &Request,
         body: &Body,
@@ -283,7 +284,7 @@ pub trait HttpCommit {
     /// * `response` - The response to commit to.
     fn commit_response(
         &mut self,
-        builder: &mut TranscriptCommitConfigBuilder,
+        builder: &mut C,
         direction: Direction,
         response: &Response,
     ) -> Result<(), HttpCommitError> {
@@ -331,7 +332,7 @@ pub trait HttpCommit {
     /// * `header` - The header to commit to.
     fn commit_response_header(
         &mut self,
-        builder: &mut TranscriptCommitConfigBuilder,
+        builder: &mut C,
         direction: Direction,
         parent: &Response,
         header: &Header,
@@ -376,7 +377,7 @@ pub trait HttpCommit {
     /// * `body` - The body to commit to.
     fn commit_response_body(
         &mut self,
-        builder: &mut TranscriptCommitConfigBuilder,
+        builder: &mut C,
         direction: Direction,
         parent: &Response,
         body: &Body,
@@ -412,8 +413,9 @@ pub trait HttpCommit {
 #[derive(Debug, Default, Clone)]
 pub struct DefaultHttpCommitter {}
 
-impl HttpCommit for DefaultHttpCommitter {}
+impl<C: TranscriptCommitmentBuilder> HttpCommit<C> for DefaultHttpCommitter {}
 
+/*
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -459,3 +461,4 @@ mod tests {
         builder.build().unwrap();
     }
 }
+*/

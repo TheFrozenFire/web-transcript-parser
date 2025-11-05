@@ -248,15 +248,6 @@ pub struct ConnectionInfo {
     pub transcript_length: TranscriptLength,
 }
 
-/// Transcript length information.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct TranscriptLength {
-    /// Number of bytes sent by the Prover to the Server.
-    pub sent: u32,
-    /// Number of bytes received by the Prover from the Server.
-    pub received: u32,
-}
-
 /// TLS 1.2 certificate binding.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CertBindingV1_2 {

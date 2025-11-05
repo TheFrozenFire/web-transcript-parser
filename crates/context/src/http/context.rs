@@ -1,9 +1,8 @@
-use tlsn_attestation::presentation::PresentationOutput;
-
 use spanner::http::{Request, Body, BodyContent};
 
 use crate::http::HttpTranscript;
 use crate::json::JsonContext;
+use crate::transcript::PartialTranscript;
 
 use http::{Method, StatusCode};
 use std::str::FromStr;
@@ -21,26 +20,26 @@ pub struct HttpContext {
 impl HttpContext {
     /// Creates a new builder.
     pub fn builder(
-        presentation: PresentationOutput,
+        transcript: PartialTranscript,
         structure: HttpTranscript,
     ) -> HttpContextBuilder {
-        HttpContextBuilder::new(presentation, structure)
+        HttpContextBuilder::new(transcript, structure)
     }
 }
 
 /// Builder for [`HttpContext`].
 pub struct HttpContextBuilder {
-    presentation: PresentationOutput,
+    transcript: PartialTranscript,
     structure: HttpTranscript,
 }
 
 impl HttpContextBuilder {
     /// Creates a new builder.
     pub fn new(
-        presentation: PresentationOutput,
+        transcript: PartialTranscript,
         structure: HttpTranscript,
     ) -> Self {
-        Self { presentation, structure }
+        Self { transcript, structure }
     }
 
     /// Enforces the body of an HTTP request or response.
@@ -203,7 +202,7 @@ impl HttpContextBuilder {
 
     /// Builds the context.
     pub fn build(self) -> Result<HttpContext, Box<dyn std::error::Error>> {
-        let transcript = HttpTranscript::parse_partial(&self.presentation.transcript.as_ref().unwrap())?;
+        let transcript = HttpTranscript::parse_partial(&self.transcript)?;
 
         self.enforce_structure(&transcript)
     }
