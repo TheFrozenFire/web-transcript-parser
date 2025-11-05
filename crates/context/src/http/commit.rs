@@ -1,7 +1,7 @@
 use std::error::Error;
 
 use spanner::Spanned;
-use crate::transcript::{Direction, TranscriptCommitmentBuilder};
+use crate::transcript::{Direction, TranscriptCommitmentBuilder, TranscriptCommitmentBuilderError};
 
 use crate::{
     http::{Body, BodyContent, Header, HttpTranscript, Request, Response, Target},
@@ -79,6 +79,9 @@ impl HttpCommitError {
 /// An HTTP data committer.
 #[allow(unused_variables)]
 pub trait HttpCommit<C: TranscriptCommitmentBuilder> {
+    /// Returns the JSON committer.
+    fn json_committer(&mut self) -> &mut dyn JsonCommit<C>;
+
     /// Commits to an HTTP transcript.
     ///
     /// The default implementation commits to each request and response in the
@@ -407,13 +410,98 @@ pub trait HttpCommit<C: TranscriptCommitmentBuilder> {
 
         Ok(())
     }
+
+    /// Commits the structure of the HTTP transcript.
+    fn commit_structure(
+        &mut self,
+        builder: &mut C,
+        transcript: &HttpTranscript,
+    ) -> Result<(), TranscriptCommitmentBuilderError> {
+        for request in &transcript.requests {
+            builder.commit(&request.without_data(), Direction::Sent)?;
+            builder.commit(&request.request.target, Direction::Sent)?;
+            
+            for header in &request.headers {
+                builder.commit(&header.without_value(), Direction::Sent)?;
+            }
+
+            for header_name in ["host", "content-length", "content-type", "transfer-encoding"] {
+                if let Some(header) = request.headers_with_name(header_name).next() {
+                    builder.commit(header, Direction::Sent)?;
+                }
+            }
+
+            if let Some(body) = &request.body {
+                match &body.content {
+                    BodyContent::Json(json) => {
+                        self.json_committer().commit_structure(builder, Direction::Sent, json)?;
+                    }
+                    
+                    BodyContent::Unknown(unknown) => {
+                        builder.commit(unknown, Direction::Sent)?;
+                    }
+
+                    _ => {}
+                }
+            }
+        }
+
+        for response in &transcript.responses {
+            builder.commit(&response.without_data(), Direction::Received)?;
+
+            for header in &response.headers {
+                match header.name.as_str().to_lowercase().as_str() {
+                    "host" | "content-length" | "content-type" | "transfer-encoding" => {
+                        builder.commit(header, Direction::Received)?;
+                    }
+                    _ => {
+                        builder.commit(&header.without_value(), Direction::Received)?;
+                    }
+                }
+            }
+
+            if let Some(body) = &response.body {
+                match &body.content {
+                    BodyContent::Json(json) => {
+                        self.json_committer().commit_structure(builder, Direction::Received, json)?;
+                    }
+
+                    BodyContent::Unknown(unknown) => {
+                        builder.commit(unknown, Direction::Received)?;
+                    }
+
+                    _ => {}
+                }
+            }
+
+            if let Some(boundaries) = &response.boundaries {
+                for boundary in boundaries {
+                    builder.commit(boundary, Direction::Received)?;
+                }
+            }
+
+            if let Some(trailers) = &response.trailers {
+                for trailer in trailers {
+                    builder.commit(&trailer.without_value(), Direction::Received)?;
+                }
+            }
+        }
+
+        Ok(())
+    }
 }
 
 /// The default HTTP committer.
 #[derive(Debug, Default, Clone)]
-pub struct DefaultHttpCommitter {}
+pub struct DefaultHttpCommitter {
+    json_committer: DefaultJsonCommitter,
+}
 
-impl<C: TranscriptCommitmentBuilder> HttpCommit<C> for DefaultHttpCommitter {}
+impl<C: TranscriptCommitmentBuilder> HttpCommit<C> for DefaultHttpCommitter {
+    fn json_committer(&mut self) -> &mut dyn JsonCommit<C> {
+        &mut self.json_committer
+    }
+}
 
 /*
 #[cfg(test)]

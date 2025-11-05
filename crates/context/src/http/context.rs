@@ -234,6 +234,7 @@ pub enum BodyContext {
     /// The body is JSON.
     Json(JsonContext),
     /// The body is unknown.
+    #[serde(serialize_with = "serialize_bytes")]
     Unknown(bytes::Bytes),
 }
 
@@ -251,5 +252,13 @@ where
     S: Serializer,
 {
     status.as_u16().serialize(serializer)
+}
+
+// Serialization function for bytes::Bytes
+fn serialize_bytes<S>(bytes: &bytes::Bytes, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    bytes.as_ref().serialize(serializer)
 }
 

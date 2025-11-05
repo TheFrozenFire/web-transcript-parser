@@ -1,6 +1,6 @@
 use bytes::Bytes;
-pub use commit::{DefaultHttpCommitter, HttpCommit, HttpCommitError};
-pub use context::{HttpContext, BodyContext, RequestContext, ResponseContext};
+pub use crate::http::commit::{DefaultHttpCommitter, HttpCommit, HttpCommitError};
+pub use crate::http::context::{HttpContext, BodyContext, RequestContext, ResponseContext};
 
 #[doc(hidden)]
 pub use spanner::http;
@@ -21,14 +21,14 @@ pub enum MessageKind {
 
 /// An HTTP transcript.
 #[derive(Debug)]
-pub struct HttpTranscript<C: TranscriptCommitmentBuilder> {
+pub struct HttpTranscript {
     /// The requests sent to the server.
     pub requests: Vec<Request>,
     /// The responses received from the server.
     pub responses: Vec<Response>,
 }
 
-impl<C: TranscriptCommitmentBuilder> HttpTranscript<C> {
+impl HttpTranscript {
     /// Parses the HTTP transcript from the provided transcripts.
     pub fn parse(transcript: &Transcript) -> Result<Self, spanner::ParseError> {
         let requests = Requests::new(Bytes::copy_from_slice(transcript.sent()))
@@ -57,132 +57,6 @@ impl<C: TranscriptCommitmentBuilder> HttpTranscript<C> {
             requests,
             responses,
         })
-    }
-
-    fn reveal_json_structure(&self, builder: &mut C, direction: Direction, json: &JsonValue) -> Result<(), TranscriptCommitmentBuilderError> {
-        match json {
-            JsonValue::Object(object) => {
-                // Reveal the object structure without its pairs
-                match direction {
-                    Direction::Sent => {
-                        builder.commit(&object.without_pairs(), direction)?;
-                    }
-                    Direction::Received => {
-                        builder.commit(&object.without_pairs(), direction)?;
-                    }
-                }
-    
-                // Reveal each key-value pair structure
-                for keyvalue in &object.elems {
-                    match direction {
-                        Direction::Sent => {
-                            builder.commit(&keyvalue.without_value(), direction)?;
-                        }
-                        Direction::Received => {
-                            builder.commit(&keyvalue.without_value(), direction)?;
-                        }
-                    }
-    
-                    // Recursively reveal the value's structure
-                    self.reveal_json_structure(builder, direction, &keyvalue.value)?;
-                }
-            }
-            JsonValue::Array(array) => {
-                // Reveal array structure
-                match direction {
-                    Direction::Sent => {
-                        builder.commit(&array.without_values(), direction)?;
-                        builder.commit(&array.separators(), direction)?;
-                    }
-                    Direction::Received => {
-                        builder.commit(&array.without_values(), direction)?;
-                        builder.commit(&array.separators(), direction)?;
-                    }
-                }
-                
-                for value in &array.elems {
-                    self.reveal_json_structure(builder, direction, value)?;
-                }
-            }
-            _ => {} // For primitive values, no structure to reveal
-        }
-
-        Ok(())
-    }
-
-    /// Reveals the structure of the HTTP transcript.
-    pub fn reveal_structure(&self, builder: &mut C) -> Result<(), TranscriptCommitmentBuilderError> {
-        for request in &self.requests {
-            builder.commit(&request.without_data(), Direction::Sent)?;
-            builder.commit(&request.request.target, Direction::Sent)?;
-            
-            for header in &request.headers {
-                builder.commit(&header.without_value(), Direction::Sent)?;
-            }
-
-            for header_name in ["host", "content-length", "content-type", "transfer-encoding"] {
-                if let Some(header) = request.headers_with_name(header_name).next() {
-                    builder.commit(header, Direction::Sent)?;
-                }
-            }
-
-            if let Some(body) = &request.body {
-                match &body.content {
-                    BodyContent::Json(json) => {
-                        self.reveal_json_structure(builder, Direction::Sent, json)?;
-                    }
-                    
-                    BodyContent::Unknown(unknown) => {
-                        builder.commit(unknown, Direction::Sent)?;
-                    }
-
-                    _ => {}
-                }
-            }
-        }
-
-        for response in &self.responses {
-            builder.commit(&response.without_data(), Direction::Received)?;
-
-            for header in &response.headers {
-                match header.name.as_str().to_lowercase().as_str() {
-                    "host" | "content-length" | "content-type" | "transfer-encoding" => {
-                        builder.commit(header, Direction::Received)?;
-                    }
-                    _ => {
-                        builder.commit(&header.without_value(), Direction::Received)?;
-                    }
-                }
-            }
-
-            if let Some(body) = &response.body {
-                match &body.content {
-                    BodyContent::Json(json) => {
-                        self.reveal_json_structure(builder, Direction::Received, json)?;
-                    }
-
-                    BodyContent::Unknown(unknown) => {
-                        builder.commit(unknown, Direction::Received)?;
-                    }
-
-                    _ => {}
-                }
-            }
-
-            if let Some(boundaries) = &response.boundaries {
-                for boundary in boundaries {
-                    builder.commit(boundary, Direction::Received)?;
-                }
-            }
-
-            if let Some(trailers) = &response.trailers {
-                for trailer in trailers {
-                    builder.commit(&trailer.without_value(), Direction::Received)?;
-                }
-            }
-        }
-
-        Ok(())
     }
 }
 

@@ -2,7 +2,7 @@
 
 mod commit;
 mod context;
-use spansy::json;
+use spanner::json;
 
 pub use commit::{DefaultJsonCommitter, JsonCommit, JsonCommitError};
 pub use context::{
