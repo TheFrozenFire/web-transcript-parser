@@ -215,15 +215,22 @@ impl PartialTranscript {
     /// Creates a new partial transcript initalized to all 0s.
     ///
     /// # Arguments
-    ///
-    /// * `sent_len` - The length of the sent data.
-    /// * `received_len` - The length of the received data.
-    pub fn new(sent_len: usize, received_len: usize) -> Self {
+    /// 
+    /// * `sent` - The sent data.
+    /// * `received` - The received data.
+    /// * `sent_authed_idx` - The indices of the sent data that have been authenticated.
+    /// * `received_authed_idx` - The indices of the received data that have been authenticated.
+    pub fn new(
+        sent: Vec<u8>,
+        received: Vec<u8>,
+        sent_authed_idx: RangeSet<usize>,
+        received_authed_idx: RangeSet<usize>,
+    ) -> Self {
         Self {
-            sent: vec![0; sent_len],
-            received: vec![0; received_len],
-            sent_authed_idx: RangeSet::default(),
-            received_authed_idx: RangeSet::default(),
+            sent,
+            received,
+            sent_authed_idx,
+            received_authed_idx,
         }
     }
 
