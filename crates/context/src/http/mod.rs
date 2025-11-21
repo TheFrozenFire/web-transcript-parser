@@ -2,6 +2,7 @@
 
 pub mod commit;
 pub mod context;
+//pub mod enforce;
 pub mod transcript;
 
 pub use commit::{DefaultHttpCommitter, HttpCommit, HttpCommitError};
