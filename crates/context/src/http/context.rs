@@ -17,6 +17,12 @@ pub struct HttpContext {
     responses: Vec<ResponseContext>,
 }
 
+impl HttpContext {
+    pub fn builder(transcript: PartialTranscript) -> HttpContextBuilder {
+        HttpContextBuilder::new(transcript)
+    }
+}
+
 pub struct HttpContextBuilder {
     transcript: PartialTranscript,
 }
