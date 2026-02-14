@@ -11,7 +11,7 @@ pub(crate) mod helpers;
 pub mod http;
 pub mod json;
 
-use rangeset::{RangeSet, ToRangeSet};
+use rangeset::set::{RangeSet, ToRangeSet};
 
 /// A parsing error.
 #[derive(Debug, thiserror::Error)]
@@ -234,7 +234,7 @@ impl Span<[u8]> {
     }
 
     pub(crate) fn new_bytes_set(src: Bytes, ranges: RangeSet<usize>) -> Self {
-        let data = ranges.iter_ranges().fold(Vec::new(), |mut acc: Vec<u8>, range| {
+        let data = ranges.iter().fold(Vec::new(), |mut acc: Vec<u8>, range| {
             acc.extend_from_slice(src.slice(range.clone()).as_ref());
             acc
         });

@@ -212,7 +212,7 @@ pub trait JsonCommit<C: TranscriptCommitmentBuilder> {
             })?;
 
             // Commit to the separators and whitespace of the array
-            for range in array.separators().iter_ranges() {
+            for range in array.separators().iter() {
                 builder.commit(&range, direction).map_err(|e| {
                     JsonCommitError::new_with_source("failed to commit array separators", e)
                 })?;

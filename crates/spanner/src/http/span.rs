@@ -1,7 +1,7 @@
 use std::ops::Range;
 
 use bytes::Bytes;
-use rangeset::RangeSet;
+use rangeset::set::RangeSet;
 
 use crate::{
     helpers::get_span_range,
@@ -191,7 +191,7 @@ pub(crate) fn parse_response_from_bytes(
         response.span = Span::new_bytes_set(src.clone(), (offset..body_ranges.end().unwrap()).into());
     }
     if let Some(structure_ranges) = structure_ranges {
-        response.boundaries = Some(structure_ranges.iter_ranges().map(|range| {
+        response.boundaries = Some(structure_ranges.iter().map(|range| {
             Boundary(Span::new_str(src.clone(), range.clone().into()))
         }).collect());
         response.span = Span::new_bytes_set(src.clone(), (offset..structure_ranges.end().unwrap() + 2).into());
@@ -268,7 +268,7 @@ fn response_body_ranges(response: &Response, src: &Bytes, head_end: usize) -> Re
         .parse::<usize>()
         .expect("code is valid utf-8")
     {
-        100..=199 | 204 | 304 => return Ok((RangeSet::new(&[]), None, None)),
+        100..=199 | 204 | 304 => return Ok((RangeSet::new_from_slice(&[]), None, None)),
         _ => {}
     }
 
@@ -289,7 +289,7 @@ fn response_body_ranges(response: &Response, src: &Bytes, head_end: usize) -> Re
             .parse::<usize>()
             .map_err(|err| ParseError(format!("failed to parse Content-Length value: {err}")))?;
 
-        Ok((RangeSet::new(&[head_end..head_end + len]), None, None))
+        Ok((RangeSet::new_from_slice(&[head_end..head_end + len]), None, None))
     } else {
         // If this is a response message and none of the above are true, then there is no way to
         // determine the length of the message body except by reading it until the connection is closed.
@@ -349,7 +349,7 @@ fn chunked_body_ranges(src: &Bytes, head_end: usize) -> Result<(RangeSet<usize>,
         pos += chunk_size + 2;
     }
 
-    Ok((RangeSet::new(&content_ranges), Some(RangeSet::new(&structure_ranges)), Some(RangeSet::new(&trailer_ranges))))
+    Ok((RangeSet::new_from_slice(&content_ranges), Some(RangeSet::new_from_slice(&structure_ranges)), Some(RangeSet::new_from_slice(&trailer_ranges))))
 }
 
 /// Parses a request or response message body.

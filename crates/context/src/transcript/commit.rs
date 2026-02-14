@@ -1,6 +1,6 @@
 use std::fmt;
 
-use rangeset::ToRangeSet;
+use rangeset::set::ToRangeSet;
 
 use crate::transcript::Direction;
 

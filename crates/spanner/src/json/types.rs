@@ -1,6 +1,6 @@
 use std::ops::{Index, Range};
 
-use rangeset::{Difference, RangeSet, ToRangeSet};
+use rangeset::{set::{RangeSet, ToRangeSet}, iter::FromRangeIterator, ops::Set};
 
 use crate::{Span, Spanned};
 
@@ -249,7 +249,7 @@ pub struct KeyValue {
 impl KeyValue {
     /// Returns the indices of the key value pair, excluding the value.
     pub fn without_value(&self) -> RangeSet<usize> {
-        self.span.indices.difference(&self.value.span().indices)
+        RangeSet::from_range_iter(self.span.indices.difference(&self.value.span().indices))
     }
 }
 
@@ -329,12 +329,12 @@ impl Array {
 
     /// Returns the indices of the separators between the elements of the array.
     pub fn separators(&self) -> RangeSet<usize> {
-        let array_range: RangeSet<usize> = self.to_range_set().difference(&self.without_values());
+        let array_range: RangeSet<usize> = RangeSet::from_range_iter(self.to_range_set().difference(&self.without_values()));
         let difference = self
             .elems
             .iter()
             .map(|e| e.to_range_set())
-            .fold(array_range.clone(), |acc, range| acc.difference(&range));
+            .fold(array_range.clone(), |acc, range| RangeSet::from_range_iter(acc.difference(&range)));
 
         difference
     }
@@ -387,7 +387,7 @@ impl Object {
     pub fn without_pairs(&self) -> RangeSet<usize> {
         let mut indices = self.span.indices.clone();
         for kv in &self.elems {
-            indices = indices.difference(&kv.span.indices);
+            indices = RangeSet::from_range_iter(indices.difference(&kv.span.indices));
         }
         indices
     }
@@ -512,7 +512,7 @@ impl_type!(KeyValue, span);
 
 #[cfg(test)]
 mod tests {
-    use rangeset::IndexRanges;
+    use rangeset::ops::Index as RangeIndex;
 
     use crate::json::parse_str;
 
@@ -555,7 +555,8 @@ mod tests {
 
         let indices = value.elems[0].without_value();
 
-        assert_eq!(src.index_ranges(&indices), "\"foo\": \"\"");
+        let result: Vec<u8> = RangeIndex::index(src.as_bytes(), &indices).flatten().copied().collect();
+        assert_eq!(std::str::from_utf8(&result).unwrap(), "\"foo\": \"\"");
     }
 
     #[test]
@@ -568,7 +569,8 @@ mod tests {
 
         let indices = value.without_values();
 
-        assert_eq!(src.index_ranges(&indices), "[]");
+        let result: Vec<u8> = RangeIndex::index(src.as_bytes(), &indices).flatten().copied().collect();
+        assert_eq!(std::str::from_utf8(&result).unwrap(), "[]");
     }
 
     #[test]
@@ -581,7 +583,8 @@ mod tests {
 
         let indices = value.without_pairs();
 
-        assert_eq!(src.index_ranges(&indices), "{\n}");
+        let result: Vec<u8> = RangeIndex::index(src.as_bytes(), &indices).flatten().copied().collect();
+        assert_eq!(std::str::from_utf8(&result).unwrap(), "{\n}");
     }
 
     #[test]

@@ -511,9 +511,9 @@ dependencies = [
 
 [[package]]
 name = "rangeset"
-version = "0.2.0"
+version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1fc7af00a06ad692080d87495a904677592c662610edb82b4fc8782f4ed2f01f"
+checksum = "c9eb3f4f9d5c7dc4c0460fc098e6f97d0f28d46da60e163cfbc058a08467d5fd"
 dependencies = [
  "serde",
 ]

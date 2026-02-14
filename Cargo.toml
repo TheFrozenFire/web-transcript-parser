@@ -10,7 +10,7 @@ spanner = { path = "crates/spanner" }
 context = { path = "crates/context" }
 
 bytes = { version = "1.4" }
-rangeset = { version = "0.2" }
+rangeset = { version = "0.4" }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = { version = "1.0" }
 thiserror = { version = "2.0" }
